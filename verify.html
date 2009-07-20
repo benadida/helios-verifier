@@ -18,7 +18,9 @@
   <script language="javascript" src="js/jquery.query-2.1.5.js"></script>
 
 <script language="javascript">
-BigInt.setup();
+$(document).ready(function() {
+    BigInt.setup();
+});    
 
 function result_append(str) {
     $('#results').append(str).append("<br />");
@@ -221,6 +223,7 @@ Enter the Election URL:
 </div>
 </div>
 </div>
-<applet codebase="/static" mayscript name="bigint" code="bigint.class" width=1 height=1></applet>
+<div id="applet_div">
+</div>
 </body>
 </html>
