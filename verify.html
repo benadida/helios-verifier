@@ -28,6 +28,24 @@ function result_append(str) {
 
 function pretty_result(result) {return result? "VERIFIED" : "FAIL";}
 
+function load_ballots(election_url, ballot_list, ballots, final_callback) {
+    // the ballots array is the place where we build up the list of ballots
+
+    // end of the iteration?
+    if (ballot_list.length == ballots.length) {
+        final_callback(ballots);
+        return;
+    }
+    
+    result_append("loading ballot #" + (ballots.length + 1));
+        
+    // get the next ballot
+    $.get(election_url + "/ballots/" + ballot_list[ballots.length].voter_uuid + '/last', function(result) {
+        ballots.push(jQuery.secureEvalJSON(result));
+        load_ballots(election_url, ballot_list, ballots, final_callback);
+    });
+}
+
 function load_election_and_ballots(election_url) {
         
     result_append("loading election...");
@@ -54,99 +72,105 @@ function load_election_and_ballots(election_url) {
         result_append("loading ballots...");
         // load voters
         $.get(election_url + "/ballots/", function(result) {
-            result_append("loaded ballots");
-            var ballots = $.secureEvalJSON(result);
+            result_append("loaded ballot list");
+            var ballot_list = $.secureEvalJSON(result);
             
-            $(ballots).each(function(i, cast_vote){
-                var vote = HELIOS.EncryptedVote.fromJSONObject(cast_vote.vote, election);
-                result_append("voter " + cast_vote.voter_uuid + " / " + vote.get_hash());
-                
-                vote.verifyProofs(election.public_key, function(answer_num, choice_num, result, choice) {
-                    if (choice_num != null) {
-                        // keep track of tally
-                        tally[answer_num][choice_num] = choice.multiply(tally[answer_num][choice_num]);
+            // load all ballots
+            load_ballots(election_url, ballot_list, [], function(ballots) {
+                // now load each ballot
+                $(ballots).each(function(i, cast_vote){
 
-                        result_append("voter " + i + ",ea " + answer_num + ", choice " + choice_num + " -- " + pretty_result(result));                            
-                    } else {
-                        result_append("voter " + i + ", ea " + answer_num + " OVERALL -- " + pretty_result(result));            
-                    }
+                    var vote = HELIOS.EncryptedVote.fromJSONObject(cast_vote.vote, election);
+                    result_append("voter " + cast_vote.voter_uuid + " / " + vote.get_hash());
+
+                    vote.verifyProofs(election.public_key, function(answer_num, choice_num, result, choice) {
+                        if (choice_num != null) {
+                            // keep track of tally
+                            tally[answer_num][choice_num] = choice.multiply(tally[answer_num][choice_num]);
+
+                            result_append("voter " + i + ",ea " + answer_num + ", choice " + choice_num + " -- " + pretty_result(result));                            
+                        } else {
+                            result_append("voter " + i + ", ea " + answer_num + " OVERALL -- " + pretty_result(result));            
+                        }
+                    });
                 });
-            });
-            
-            // get the election result
-            $.get(election_url + "/result", function(result) {
-                var results = $.secureEvalJSON(result);
-                
-                // get the trustees and proofs
-                $.get(election_url + "/trustees/", function(trustees_json) {
-                   trustees = $.secureEvalJSON(trustees_json);
-                   
-                   // create the Helios objects
-                   trustees = $(trustees).map(function(i, trustee) {return HELIOS.Trustee.fromJSONObject(trustee)});
 
-                   // the public key that we'll check
-                   var combined_key = 1;
+                // get the election result
+                $.get(election_url + "/result", function(result) {
+                    var results = $.secureEvalJSON(result);
 
-                   // verify the keys
-                   $(trustees).each(function(i, trustee) {
-                      if (trustee.public_key.verifyKnowledgeOfSecretKey(trustee.pok, ElGamal.fiatshamir_dlog_challenge_generator)) {
-                          result_append("Trustee PK for " + trustee.public_key_hash + " VERIFIED.");
-                          
-                          // FIXME check the public key hash
-                      } else {
-                          result_append("==== ERROR for PK of trustee " + trustee.email);
-                      }
+                    // get the trustees and proofs
+                    $.get(election_url + "/trustees/", function(trustees_json) {
+                       trustees = $.secureEvalJSON(trustees_json);
 
-                      combined_key = trustee.public_key.multiply(combined_key);
-                   });
+                       // create the Helios objects
+                       trustees = $(trustees).map(function(i, trustee) {return HELIOS.Trustee.fromJSONObject(trustee)});
 
-                   // verify the combination of the keys into the final public key
-                   if (combined_key.equals(election.public_key)) {
-                       result_append("election public key MATCHES");
-                   } else {
-                       result_append("==== ERROR, election public key doesn't match");
-                   }
-                   
-                   $(tally).each(function(q_num, q) {
-                       result_append("Question #" + q_num + ": " + election.questions[q_num].short_name);
-                       $(q).each(function(a_num, a) {
-                           var plaintext = new ElGamal.Plaintext(election.public_key.g.modPow(BigInt.fromInt(results[q_num][a_num]), election.public_key.p), election.public_key);
-                           
-                           var check = true;
-                           result_append("Answer #" + a_num);
-                           
-                           var decryption_factors = [];
-                           
-                           // go through the trustees' decryption factors and verify each one
-                           $(trustees).each(function(t_num, trustee) {
-                               if (trustee.public_key.verifyDecryptionFactor(a, trustee.decryption_factors[q_num][a_num],
-                                               trustee.decryption_proofs[q_num][a_num], ElGamal.fiatshamir_challenge_generator)) {
-                                   result_append("-- Trustee " + trustee.public_key_hash + " decryption factor verifies");
-                               } else {
-                                   result_append("==== ERROR: Trustee " + trustee.public_key_hash + " decryption factor does not verify");
-                                   check= false;
-                               }
+                       // the public key that we'll check
+                       var combined_key = 1;
 
-                               decryption_factors.push(trustee.decryption_factors[q_num][a_num]);
-                           });
+                       // verify the keys
+                       $(trustees).each(function(i, trustee) {
+                          if (trustee.public_key.verifyKnowledgeOfSecretKey(trustee.pok, ElGamal.fiatshamir_dlog_challenge_generator)) {
+                              result_append("Trustee PK for " + trustee.public_key_hash + " VERIFIED.");
 
-                           // recheck decryption factors
-                           var expected_value = election.public_key.g.modPow(BigInt.fromInt(results[q_num][a_num]), election.public_key.p);                        
-                           var recomputed_value = a.decrypt(decryption_factors).getM();
-                           if (expected_value.equals(recomputed_value)) {
-                               result_append("--- choice VERIFIED");
-                           } else {
-                               result_append("==== ERROR: choice not verified");
-                               check = false;
-                           }
+                              // FIXME check the public key hash
+                          } else {
+                              result_append("==== ERROR for PK of trustee " + trustee.email);
+                          }
 
-                           result_append("- " + election.questions[q_num].answers[a_num] + " - " + results[q_num][a_num] + " -- " + pretty_result(check));
+                          combined_key = trustee.public_key.multiply(combined_key);
                        });
 
-                   });
-                   
-                });
+                       // verify the combination of the keys into the final public key
+                       if (combined_key.equals(election.public_key)) {
+                           result_append("election public key MATCHES");
+                       } else {
+                           result_append("==== ERROR, election public key doesn't match");
+                       }
+
+                       $(tally).each(function(q_num, q) {
+                           result_append("Question #" + q_num + ": " + election.questions[q_num].short_name);
+                           $(q).each(function(a_num, a) {
+                               var plaintext = new ElGamal.Plaintext(election.public_key.g.modPow(BigInt.fromInt(results[q_num][a_num]), election.public_key.p), election.public_key);
+
+                               var check = true;
+                               result_append("Answer #" + a_num);
+
+                               var decryption_factors = [];
+
+                               // go through the trustees' decryption factors and verify each one
+                               $(trustees).each(function(t_num, trustee) {
+                                   if (trustee.public_key.verifyDecryptionFactor(a, trustee.decryption_factors[q_num][a_num],
+                                                   trustee.decryption_proofs[q_num][a_num], ElGamal.fiatshamir_challenge_generator)) {
+                                       result_append("-- Trustee " + trustee.public_key_hash + " decryption factor verifies");
+                                   } else {
+                                       result_append("==== ERROR: Trustee " + trustee.public_key_hash + " decryption factor does not verify");
+                                       check= false;
+                                   }
+
+                                   decryption_factors.push(trustee.decryption_factors[q_num][a_num]);
+                               });
+
+                               // recheck decryption factors
+                               var expected_value = election.public_key.g.modPow(BigInt.fromInt(results[q_num][a_num]), election.public_key.p);                        
+                               var recomputed_value = a.decrypt(decryption_factors).getM();
+                               if (expected_value.equals(recomputed_value)) {
+                                   result_append("--- choice VERIFIED");
+                               } else {
+                                   result_append("==== ERROR: choice not verified");
+                                   check = false;
+                               }
+
+                               result_append("- " + election.questions[q_num].answers[a_num] + " - " + results[q_num][a_num] + " -- " + pretty_result(check));
+                           });
+
+                       });
+
+                    });
+                });                
             });
+            
         });
     });
         
