@@ -40,9 +40,31 @@ function load_ballots(election_url, ballot_list, ballots, final_callback) {
     result_append("loading ballot #" + (ballots.length + 1));
         
     // get the next ballot
-    $.get(election_url + "/ballots/" + ballot_list[ballots.length].voter_uuid + '/last', function(result) {
+    $.get(election_url + "/ballots/" + ballot_list[ballots.length].uuid + '/last', function(result) {
         ballots.push(jQuery.secureEvalJSON(result));
         load_ballots(election_url, ballot_list, ballots, final_callback);
+    });
+}
+
+// load the ballot list in increments of 50, for long ballots
+function load_ballot_list(election_url, ballot_list, after, final_callback) {
+    var url = election_url + "/voters/?limit=50";
+    if (after)
+        url+= "&after=" + after;
+        
+    $.get(url, function(result) {
+        var new_ballot_list = jQuery.secureEvalJSON(result);
+
+        // done, no more ballots?
+        if (new_ballot_list.length == 0)
+            return final_callback(ballot_list);
+            
+        // not done, add to the list
+        ballot_list = ballot_list.concat(new_ballot_list);
+        after = ballot_list[ballot_list.length - 1].uuid;
+        
+        // and iterate
+        load_ballot_list(election_url, ballot_list, after, final_callback);
     });
 }
 
@@ -70,10 +92,10 @@ function load_election_and_ballots(election_url) {
         });
 
         result_append("loading ballots...");
-        // load voters
-        $.get(election_url + "/ballots/", function(result) {
+        
+        // load voter list
+        load_ballot_list(election_url, [], null, function(ballot_list) {
             result_append("loaded ballot list");
-            var ballot_list = $.secureEvalJSON(result);
             
             // load all ballots
             load_ballots(election_url, ballot_list, [], function(ballots) {
