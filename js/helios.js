@@ -473,6 +473,9 @@ HELIOS.EncryptedVote = Class.extend({
     $(this.encrypted_answers).each(function(ea_num, enc_answer) {
         var overall_result = 1;
 
+        // the max number of answers (decides whether this is approval or not and requires an overall proof)
+        var max = self.election.questions[ea_num].max;
+
         // go through each individual proof
         $(enc_answer.choices).each(function(choice_num, choice) {
           var result = choice.verifyDisjunctiveProof(zero_or_one, enc_answer.individual_proofs[choice_num], ElGamal.disjunctive_challenge_generator);
@@ -480,17 +483,23 @@ HELIOS.EncryptedVote = Class.extend({
           
           VALID_P = VALID_P && result;
            
-          // keep track of homomorphic product
-          overall_result = choice.multiply(overall_result);
+          // keep track of homomorphic product, if needed
+          if (max != null)
+            overall_result = choice.multiply(overall_result);
         });
         
-        // possible plaintexts [0, 1, .. , question.max]
-        var plaintexts = UTILS.generate_plaintexts(pk, self.election.questions[ea_num].min, self.election.questions[ea_num].max);
+        if (max != null) {
+          // possible plaintexts [0, 1, .. , question.max]
+          var plaintexts = UTILS.generate_plaintexts(pk, self.election.questions[ea_num].min, self.election.questions[ea_num].max);
         
-        // check the proof on the overall product
-        var overall_check = overall_result.verifyDisjunctiveProof(plaintexts, enc_answer.overall_proof, ElGamal.disjunctive_challenge_generator);
-        outcome_callback(ea_num, null, overall_check, null);
-        VALID_P = VALID_P && overall_check;
+          // check the proof on the overall product
+          var overall_check = overall_result.verifyDisjunctiveProof(plaintexts, enc_answer.overall_proof, ElGamal.disjunctive_challenge_generator);
+          outcome_callback(ea_num, null, overall_check, null);
+          VALID_P = VALID_P && overall_check;
+        } else {
+          // check to make sure the overall_proof is null, since it's approval voting
+          VALID_P = VALID_P && (enc_answer.overall_proof == null)
+        }
     });
     
     return VALID_P;
