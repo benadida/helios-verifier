@@ -78,14 +78,14 @@ function load_election_and_ballots(election_url) {
         result_append("loaded election: " + election.name);
         result_append("election fingerprint: " + election.get_hash());
         
-        if (election.tally_type != "homomorphic") {
-            result_append("PROBLEM: this election is not a straight-forward homomorphic-tally election. As a result, Helios cannot currently verify it.");
-            return;
-        }
-        
         var tally = [];
 
         $(election.questions).each(function(qnum, q) {
+            if (q.tally_type != "homomorphic") {
+              result_append("PROBLEM: this election is not a straight-forward homomorphic-tally election. As a result, Helios cannot currently verify it.");
+              return;
+            }
+
             tally[qnum] = $(q.answers).map(function(anum, a) {
                 return 1;
             });
