@@ -102,6 +102,9 @@ function load_election_and_ballots(election_url) {
                 // now load each ballot
                 $(ballots).each(function(i, cast_vote){
 
+                    if (cast_vote.vote == null)
+                      return;
+                      
                     var vote = HELIOS.EncryptedVote.fromJSONObject(cast_vote.vote, election);
                     result_append("voter " + cast_vote.voter_uuid + " / " + vote.get_hash());
 
