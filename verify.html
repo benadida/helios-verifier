@@ -19,7 +19,12 @@
 
 <script language="javascript">
 $(document).ready(function() {
-    BigInt.setup();
+    BigInt.setup(function() {
+       $('#verifier_loading').hide();
+       $('#verifier').show();
+    }, function() {
+       alert('sorry, in-browser verification requires Java Support at this time.');
+    });
 });    
 
 function result_append(str) {
@@ -244,7 +249,11 @@ $(document).ready(function() {
 </div>
 <div id="content">
 
-<div align="center">
+<div id="verifier_loading">
+loading verifier ...
+</div>
+
+<div id="verifier" align="center" style="display:none;">
 Enter the Election URL:
 <form onsubmit="try{load_election_and_ballots(this.election_url.value);} catch (e) {} return false;">
     <input type="text" size="50" name="election_url" id="election_url" /><br />
